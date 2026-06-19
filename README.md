@@ -27,6 +27,34 @@ Beyond that, the multipath profile itself changes as the drone moves — reflect
 
 ### WiFi Sensing Survey — Ma et al.
 
+CSI is a 3D matrix of complex values (amplitude + phase) across transmit antennas, receive antennas, and subcarriers. It captures how the wireless channel changes due to effects form reflections, diffraction, absorption, scattering. It also changes when people or objects move in the environment.
+But he raw measured CSI isn't clean though. It has phase offsets . A lot of the signal processing work in this space is just dealing with those before you can extract anything meaningful.
+
+**The full application landscape:**
+
+The survey groups CSI applications into three buckets:
+
+- **Detection** (binary): Is someone there? Did someone fall? Is there motion?
+  Usually threshold based or simple one-class SVM. Doesn't need super clean data.
+- **Recognition** (multi-class): What activity? Which gesture? Who is this person?
+  Almost always learning-based — SVM, kNN, DTW, CNN, LSTM.
+- **Estimation** (continuous values): Where exactly? What direction? Breathing rate?
+  Almost always modeling-based — AoA, ToF, Doppler, Fresnel Zone model, MUSIC. These are the most sensitive to noise and require the most signal processing.
+
+Localization falls in the estimation bucket, which is the hardest one. It needs accurate phase and timing information, which is exactly what gets corrupted by hardware offsets and relevant to us by the receiver moving around.
+
+**What makes sense:**
+The taxonomy is useful. The paper makes clear that the harder the task (detection → recognition → estimation), the more you depend on clean, well-calibrated signals, and the more fragile things get when conditions change. Localization is at the hardest end.
+
+The survey also notes something directly relevant: most of these systems assume the WiFi device and surrounding environment are either both static, or at most one is moving (a person walking past fixed APs). Nobody has really tackled the case where the *receiver itself* is moving through space.
+
+**Where it breaks down for a moving drone:**
+
+The survey actually mentions drones briefly — as a future opportunity for cross-device WiFi sensing. But that optimism glosses over a real problem. Basically every localization and estimation technique surveyed assumes a static receiver. The
+signal processing pipeline (phase offset removal, AoA/ToF estimation, clustering) is designed around the idea that the channel changes because the *environment* changes, not because the receiver itself is flying through it.
+
+On a drone, you get Doppler shifts from the drone's own motion on top of any environmental multipath, vibration from the motors introducing high-frequency noise into the CSI measurements, and the antenna orientation changing continuously as the drone tilts. The signal you're trying to extract and the noise you're trying to remove become very hard to separate.
+
 
 ---
 
