@@ -1,4 +1,4 @@
-# Wifi and CSI Drone navigation
+# Wifi CSI Drone navigation
 
 ## Research & Reflections
 
@@ -60,6 +60,32 @@ On a drone, you get Doppler shifts from the drone's own motion on top of any env
 
 ### DeepFi — Wang et al.
 
+DeepFi takes a completely different approach to CSI-based localization compared to SpotFi. Instead of trying to compute geometry (AoA, ToF, triangulation), it treats localization as a fingerprinting problem — collect CSI at known locations,  rain a model on those, then match new CSI readings to the database at inference time.
+
+**The core idea:**
+The paper starts from three observations about CSI:
+- At a fixed location, CSI is relatively stable over time
+- At adjacent locations, CSI looks noticeably different
+- The three antennas on an Intel 5300 NIC each give different CSI readings for the same packet — that's useful diversity, not noise to average away
+- 
+Based on this, they use a Deep Belief Network (DBN) with 4 hidden layers trained on 90 CSI amplitude values per packet (30 subcarriers × 3 antennas). Instead of storing raw CSI as fingerprints, they store the *weights* of the trained network as a compact representation of what the channel looks like at each location. At inference time, they run new CSI through the network, compare reconstruction error across all stored fingerprints, and estimate location as a probability-weighted average using a radial basis function.
+
+Training uses a greedy layer-by-layer algorithm (stacked RBMs with contrastive divergence) to keep things tractable, followed by fine-tuning with backpropagation. 
+
+**Results:**
+~0.94m mean error in an open living room, ~1.8m in a cluttered lab environment with lots of NLoS. Both better than RSSI-based methods and the simpler FIFS CSI scheme they compare against.
+
+**What makes sense:**
+The fingerprinting framing is quite practical. If you can't do clean geometry, learning a mapping from signal space to location space sidesteps the need for precise AoA/ToF estimates. Deep learning's ability to find non-obvious structure in high-dimensional data is a reasonable fit for CSI, which is exactly that kind of data.
+
+The three-antenna diversity point is also underappreciated in older work averaging across antennas throws away information that the network can actually use.
+
+**Where it breaks down for a moving drone:**
+DeepFi's entire premise is that CSI is a stable fingerprint of a location. That's Hypothesis 1 in the paper stable at a fixed spot, variable between spots. A drone violates this almost by definition. The fingerprint at any given "location" will look totally different depending on the drone's orientation, altitude, and the vibration state of its motors at the moment of measurement. 
+
+Even more fundamentally, fingerprinting requires you to have collected training data at (or near) the location you want to localize to. That's manageable for a static device in a known building. For a drone navigating an unmapped space, you'd need to fly the entire environment collecting training data before you could use it, which defeats much of the purpose. And any time the environment changes (someone moves furniture, opens a door), you'd need to recollect.
+
+The method also only uses CSI amplitude, discarding phase entirely because of calibration difficulties. Which is just throwing off extra information in my opinion,
 
 ---
 
