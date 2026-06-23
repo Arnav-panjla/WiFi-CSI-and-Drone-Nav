@@ -1,5 +1,7 @@
 # Results: CSI-Based Indoor Localization
 
+Dataset: [here](https://github.com/qiang5love1314/CSI-dataset-for-indoor-localization)
+
 ## Experiment Setup
 
 Three classification tasks on WiFi CSI fingerprints using the public CSI dataset:
