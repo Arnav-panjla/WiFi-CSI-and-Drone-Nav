@@ -13,7 +13,7 @@ Three classification tasks on WiFi CSI fingerprints using the public CSI dataset
 |------|---------|---------|-------------|--------------|-------|
 | Room ID | 4139 | 4 | **63.4%** | 62.4% | Grouped split (honest) |
 | Lab Zone (3×3) | 2536 | 9 | **16.8%** | 16.7% | Grouped split (honest) |
-| Lab Exact Coord | 2536 | 317 | **99.7%** | 83.8% | Random split (leaky) ⚠️ |
+| Lab Exact Coord | 2536 | 317 | **99.7%** | 83.8% | Random split (leaky) |
 
 ## Key Findings
 
