@@ -1,0 +1,5 @@
+================ SUMMARY ================
+Room ID (4-class)      n= 4139 classes=   4 | RandomForest=0.634  kNN(k=5)=0.624
+Lab zone (9-class)     n= 2536 classes=   9 | RandomForest=0.168  kNN(k=5)=0.167
+Lab exact coord*       n= 2536 classes= 317 | RandomForest=0.997  kNN(k=5)=0.838
+* random split leaks locations across train/test (optimistic).
