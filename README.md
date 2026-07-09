@@ -91,7 +91,112 @@ The method also only uses CSI amplitude, discarding phase entirely because of ca
 
 ## Experimentation
 
+Two experiments, in `/code`, that walk from "here's why CSI alone fails on a
+drone" to "here's what I'd actually build instead."
+
+### Experiment 1 — static fingerprinting hits a wall (`csi_localization.py`)
+
+I used a public per-location CSI dataset ([qiang5love1314](https://github.com/qiang5love1314/CSI-dataset-for-indoor-localization))
+of amplitude fingerprints, pulled simple features (mean & std of amplitude over
+3 antennas × 30 subcarriers, 180 dims, in 50-packet windows), and ran
+RandomForest / kNN on three tasks. Full write-up in [`code/results/`](code/results/README.md).
+
+| Task | Classes | Accuracy | Split |
+|------|---------|----------|-------|
+| Room ID | 4 | **63%** | grouped (honest) |
+| Lab zone (3×3) | 9 | **17%** (~random) | grouped (honest) |
+| Lab exact coord | 317 | 99.7% | random (leaky — flagged) |
+
+Rooms are separable; sub-meter localization inside one room is basically random
+once you use an honest split that keeps a location on one side of train/test.
+The 99.7% is memorization from window leakage, not generalization. This is the
+static-receiver ceiling, and a moving/tilting/vibrating drone only makes it
+worse — it violates the one assumption (a location has a stable fingerprint)
+that every method here leans on.
+
+### Experiment 2 — what I'd actually build (`csi_inertial_fusion.py`)
+
+If CSI alone can't localize a moving drone, the fix is to stop asking it to. The
+design comes from three ideas, which turn out to be **one architecture**:
+
+1. **Use the onboard IMU** — but an IMU senses *motion*, not location. Integrate
+   it and the error grows quadratically; it drifts meters in seconds. It's a
+   component, not a localizer.
+2. **Put the receiver off the drone** — make the drone a *transmitter* and let
+   fixed anchors at known positions do the CSI ranging. Now the receiver is
+   *static* again, which is the exact regime SpotFi/DeepFi need. This is what
+   makes CSI reliable under drone motion.
+3. **Start from a known point, fuse IMU + CSI** — the IMU carries a smooth,
+   high-rate estimate between the sparse, noisy CSI fixes; the CSI fixes bound
+   the IMU's drift. This is a Kalman filter, and structurally it's just
+   visual-inertial odometry with CSI swapped in for the camera — the same trick
+   the drone already uses when cameras work.
+
+So: **drone-as-transmitter → off-board anchors give CSI range fixes → fused with
+the onboard IMU in an EKF, from a known start.** Idea 1 is the IMU input, idea 2
+is where the absolute fix comes from, idea 3 is the filter that ties them.
+
+`csi_inertial_fusion.py` simulates this on a 40 s flight (50 Hz IMU with a
+realistic bias, CSI fixes at 2 Hz from 5 anchors). Crucially, the CSI ranging
+noise **grows with the drone's speed** — the README's own thesis (Doppler,
+vibration, and tilt corrupt CSI under motion) made quantitative.
+
+| Estimator | RMSE | Note |
+|-----------|------|------|
+| IMU only (dead reckoning) | **27.6 m** | drifts off-frame, 61 m final error |
+| CSI only (multilateration) | **0.96 m** | anchored but noisy, jitters |
+| **Fused EKF** | **0.54 m** | 44% better than the best single sensor |
+
+![fusion trajectory](code/results/fusion_trajectory.png)
+![fusion error over time](code/results/fusion_error.png)
+
+The error-vs-time plot is the whole point in one figure: the IMU curve blows up
+quadratically while the fused curve stays flat and bounded. Each sensor covers
+the other's weakness — IMU is smooth-but-drifts, CSI is anchored-but-noisy.
+
+**Caveat:** this is a simulation with hand-chosen noise models, not real drone
+CSI. The value is in the *architecture* and the failure modes it targets; every
+place a real ToF/AoA CSI stream or accelerometer would plug in is marked in the
+code.
+
+### The forward-looking twist — motion as signal, not noise
+
+Every paper (and my Part 1 write-up) treats the drone's motion as *noise* to be
+removed. It can be flipped: motion-induced **Doppler in CSI encodes velocity**.
+Instead of fighting the Doppler shift, measure it and use it as a second
+velocity estimate that cross-checks the IMU — turning the biggest liability into
+an extra sensor. That's the natural next step beyond this proof of concept.
+
+### Other approaches I considered
+
+The EKF above is the *infrastructure-based, filter-based* design — the safe
+default, but it assumes you can pre-install and survey anchors. That's fine for
+a known warehouse, fatal for a truly unmapped one. The alternatives below are
+really about relaxing that one assumption, or swapping the estimator for one
+that handles a failure mode the EKF can't. I didn't build these; this is the map
+of the space.
+
+| Approach | Removes constraint | Absolute pos? | Unmapped space? | Trade-off |
+|---|---|---|---|---|
+| **EKF + anchors** (built) | — | Yes | No | Needs surveyed anchors |
+| **CSI-SLAM** | known anchors | drift-corrected | **Yes** | Online radio map + loop closure; noisy, hardest |
+| **Learned end-to-end** (CSI+IMU→pose) | ranging geometry | Yes | No | Learns drone-specific artifacts; needs heavy training data, poor cross-env transfer |
+| **Doppler odometry** | anchors entirely | relative only | Partial | "Motion as signal" (above); no absolute reference, best paired with another method |
+| **Particle filter + fingerprint** | Gaussian/unimodal assumption | Yes | No | Represents multimodal CSI ambiguity ("here OR there") until motion disambiguates — the EKF's blind spot; reuses Exp-1 fingerprints |
+| **Factor-graph smoothing** | single-step linearization | Yes | No | Batch-optimizes a pose window (modern VIO/SLAM backbone); better accuracy, more compute — a natural v2 of the EKF |
+| **Multi-sensor redundancy** | single-sensor fragility | Yes | Partial | CSI + UWB + baro + magnetometer + optical flow; least elegant, most robust in a real dusty warehouse |
+
+**How I'd sequence them:** the EKF is v1. The two highest-insight follow-ups are
+the **particle filter** (directly fixes the EKF's inability to resolve
+multimodal CSI multipath, and reuses the fingerprints from Experiment 1) and
+**Doppler odometry** (the anchor-free, motion-as-signal idea). **CSI-SLAM** is
+the ceiling — it's the only one that answers the prompt's "unmapped dusty
+warehouse" head-on — but it's well past a 6-hour build.
+
 ---
 
 ## Code
 ```/code```
+- `csi_localization.py` — Experiment 1: static CSI fingerprinting classifiers
+- `csi_inertial_fusion.py` — Experiment 2: CSI + IMU EKF fusion for a moving drone
+- `results/` — outputs, plots, and detailed notes
