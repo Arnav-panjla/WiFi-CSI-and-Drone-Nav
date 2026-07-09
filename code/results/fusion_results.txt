@@ -1,0 +1,10 @@
+============ CSI-INERTIAL FUSION ============
+trajectory: 40s @ 50Hz IMU, CSI fix @ 2Hz, 5 anchors
+IMU error model : bias=[0.06, -0.05] m/s^2, noise=0.05 m/s^2
+CSI error model : 0.25 m + 0.6 m per (m/s) of speed
+
+  IMU only  (dead reckoning)     RMSE =  27.59 m   final =  61.51 m
+  CSI only  (multilateration)    RMSE =   0.96 m
+  Fused     (EKF)                RMSE =   0.54 m
+
+fusion improves on best single sensor by 44%
