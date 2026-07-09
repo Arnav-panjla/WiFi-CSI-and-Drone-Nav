@@ -1,0 +1,4 @@
+# Ignore the main dataset directory:
+code/CSI-dataset-for-indoor-localization-main/
+
+# Add other common ignores if needed
